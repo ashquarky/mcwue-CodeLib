@@ -1,0 +1,6 @@
+build/
+*.asm
+*.elf
+
+.vscode
+.idea

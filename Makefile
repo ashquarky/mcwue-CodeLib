@@ -10,8 +10,6 @@ ifeq ($(strip $(DEVKITPRO)),)
 $(error "Please set DEVKITPRO in your environment. export DEVKITPRO=<path to>devkitPRO")
 endif
 export PATH			:=	$(DEVKITPPC)/bin:$(PORTLIBS)/bin:$(PATH)
-export LIBOGC_INC	:=	$(DEVKITPRO)/libogc/include
-export LIBOGC_LIB	:=	$(DEVKITPRO)/libogc/lib/wii
 export PORTLIBS		:=	$(DEVKITPRO)/portlibs/ppc
 
 PREFIX	:=	powerpc-eabi-
@@ -37,9 +35,6 @@ INCLUDES	   :=  include
 
 # You might want to add one if those don't work (Issue with newer Cemu Versions)
 MODULE_MATCHES := 0x867317DE,0x6237F45C,0x90112329
-
-ASM_PATH       := GraphicPack/patch_codelib.asm
-# ASM_PATH       := C:/Users/David/Documents/BIN/graphicPacks/!Minecraft Cheats/Assembly/Aurora Client/patch_auc.asm
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -121,9 +116,11 @@ export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib) \
 export OUTPUT	:=	$(CURDIR)/$(TARGET)
 .PHONY: $(BUILD) clean install
 
+all: $(BUILD)
+
 #---------------------------------------------------------------------------------
 $(BUILD):
-	@[ -d $@ ] || mkdir -p $@
+	@$(shell [ ! -d $(BUILD) ] && mkdir -p $(BUILD))
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 #---------------------------------------------------------------------------------
@@ -131,14 +128,6 @@ clean:
 	@echo clean ...
 	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).bin $(BUILD_DBG).elf
 
-all:
-	@make clean
-	@make
-	@echo "Creating text_section.bin";
-	@$(OBJCOPY) --only-section=.text $(TARGET).elf -O binary $(BUILD)/text_section.bin
-	@echo "Creating .asm Content and Writing it to: $(ASM_PATH)"
-	@python -c 'with open("$(BUILD)/text_section.bin", "rb") as f: print("[Wrapper]\nmoduleMatches = ${MODULE_MATCHES}\n\n0x02F37154 = b _onStart\n\n0x104D4DD8 = .uint _Code\n0x104D4DDC = .uint 0x0\n\n.origin = codecave\n\n# .text\n_Code:"); print(".uint", end=" 0x"); [print("%02x" % val, end="" if i % 4 != 0 else "\n.uint 0x") for i, val in enumerate(f.read(), 1)]; print("00000000\n\n_onStart:\nbctrl\nlis r12, _Code@ha\naddi r12, r12, _Code@l\nmtctr r12\nbctrl\nb 0x02F37158")' > "$(ASM_PATH)"
-	@python -c 'with open("$(ASM_PATH)") as f: print("Total Lines Written: " + str(sum(1 for _ in f)));'
 #---------------------------------------------------------------------------------
 else
 
@@ -147,7 +136,18 @@ DEPENDS	:=	$(OFILES:.o=.d)
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
-$(OUTPUT).elf:  $(OFILES)
+
+all: $(OUTPUT).asm
+
+%.asm: %.elf
+	@echo "Creating text_section.bin";
+	@$(OBJCOPY) --only-section=.text $^ -O binary text_section.bin
+	@echo "Creating .asm Content"
+	@python -c 'with open("text_section.bin", "rb") as f: print("[Wrapper]\nmoduleMatches = ${MODULE_MATCHES}\n\n0x02F37154 = b _onStart\n\n0x104D4DD8 = .uint _Code\n0x104D4DDC = .uint 0x0\n\n.origin = codecave\n\n# .text\n_Code:"); print(".uint", end=" 0x"); [print("%02x" % val, end="" if i % 4 != 0 else "\n.uint 0x") for i, val in enumerate(f.read(), 1)]; print("00000000\n\n_onStart:\nbctrl\nlis r12, _Code@ha\naddi r12, r12, _Code@l\nmtctr r12\nbctrl\nb 0x02F37158")' > "$@"
+	@python -c 'with open("$@") as f: print("Total Lines Written: " + str(sum(1 for _ in f)));'
+	@cp "$@" "../GraphicPack/patch_codelib.asm" # small hack
+
+$(OUTPUT).elf: $(OFILES)
 
 #---------------------------------------------------------------------------------
 # This rule links in binary data with the .jpg extension
@@ -157,10 +157,6 @@ $(OUTPUT).elf:  $(OFILES)
 	$(Q)$(LD) -n -T $^ $(LDFLAGS) -o ../$(BUILD_DBG).elf $(LIBPATHS) $(LIBS)
 	$(Q)$(OBJCOPY) -R .comment -R .gnu.attributes ../$(BUILD_DBG).elf $@
 
-
-../data/loader.bin:
-	$(MAKE) -C ../loader clean
-	$(MAKE) -C ../loader
 #---------------------------------------------------------------------------------
 %.a:
 #---------------------------------------------------------------------------------
